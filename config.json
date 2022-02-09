@@ -1,0 +1,82 @@
+{
+  "Global" : {
+    "dev" : false,
+    "year" : 2019,
+    "finalYear":2022,
+    "active" : false,
+    "show" : false,
+    "errorcleanup" : true,
+    "fields" : [
+      "fileDate",
+      "caseID",
+      "plaintiff",
+      "plaintiffAddress",
+      "plaintiffCity",
+      "plaintiffPhone",
+      "plaintiffAttorney",
+      "defendantName1",
+      "defendantAddress1",
+      "defendantCity1",
+      "defendantPhone1",
+      "defendantAttorney1",
+      "defendantName2",
+      "defendantAddress2",
+      "defendantCity2",
+      "defendantPhone2",
+      "defendantAttorney2",
+      "caseStatus",
+      "eventNumber",
+      "eventDate",
+      "eventName",
+      "eventDescription",
+      "judgmentType",
+      "judgmentFor",
+      "judgmentComp",
+      "address"
+    ]
+  },
+  "Clayton" : {
+    "errorthreshold": 10,
+    "active" : true,
+    "show" : false
+  },
+  "Maconbibb" : {
+    "errorthreshold": 80,
+    "startcase": 60000,
+    "active" : true,
+    "show" : false
+  },
+  "Henry" : {
+    "errorthreshold": 10,
+    "timeout" : 10000,
+    "active" : true,
+    "show" : false
+  },
+  "Cobb" : {
+    "errorthreshold": 10,
+    "active" : true,
+    "show" : false
+  },
+  "Gwinnett" : {
+    "errorthreshold": 200,
+    "timeout" : 25000,
+    "active" : true,
+    "show" : false
+  },
+  "Fulton": {
+    "errorthreshold": 20,
+    "startcase": 150670,
+    "active" : true,
+    "show" : false
+  },
+  "DeKalb": {
+    "errorthreshold": 40,
+    "active" : true,
+    "show" : false
+  },
+  "Chatham": {
+    "errorthreshold": 40,
+    "active" : false,
+    "show" : false
+  }
+}

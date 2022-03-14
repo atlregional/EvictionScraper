@@ -19,7 +19,7 @@ module.exports = config => {
     prevFileList.find(filename => filename.search(county) >= 0) ?
       prevFileList.find(filename => filename.search(county) >= 0)
     : null;
-
+  const monthsToRescrape = 2;
   const dev = config.dev;
   const startCase = config.startcase ? config.startcase : 1;
   var year = config.year ? config.year.toString() : '2020';
@@ -424,11 +424,11 @@ module.exports = config => {
           // console.log(caseNumber)
 
           var dateCutOff = new Date();
-          dateCutOff.setMonth(dateCutOff.getMonth() - 3);
+          dateCutOff.setMonth(dateCutOff.getMonth() - monthsToRescrape);
           dateCutOff.setDate(1);
           var dateCase = new Date(rowObj['fileDate']);
 
-          if (rowObj['caseID'].slice(0, 2) == year.toString().slice(2)){
+          if (rowObj['caseID'].slice(0, 2) == year.toString().slice(2) || !fresh){
           onlynew?
             fs.appendFile(
               filepath,

@@ -1,11 +1,11 @@
 {
   "Global" : {
     "dev" : false,
-    "year" : 2019,
-    "finalYear":2022,
-    "active" : false,
-    "show" : false,
-    "errorcleanup" : true,
+    "year" : 2022,
+    "finalYear": 2022,
+    "active" : true,
+    "show" : true,
+    "errorcleanup" : false,
     "fields" : [
       "fileDate",
       "caseID",
@@ -36,47 +36,33 @@
     ]
   },
   "Clayton" : {
-    "errorthreshold": 10,
-    "active" : true,
-    "show" : false
+    "errorthreshold": 10, 
+    "append" : true
   },
   "Maconbibb" : {
     "errorthreshold": 80,
-    "startcase": 60000,
-    "active" : true,
-    "show" : false
+    "startcase": 60000
   },
   "Henry" : {
     "errorthreshold": 10,
-    "timeout" : 10000,
-    "active" : true,
-    "show" : false
+    "timeout" : 10000
   },
   "Cobb" : {
-    "errorthreshold": 10,
-    "active" : true,
-    "show" : false
+    "errorthreshold": 10
   },
   "Gwinnett" : {
     "errorthreshold": 200,
-    "timeout" : 25000,
-    "active" : true,
-    "show" : false
+    "timeout" : 25000
   },
   "Fulton": {
     "errorthreshold": 20,
-    "startcase": 150670,
-    "active" : true,
-    "show" : false
+    "append": true
+
   },
   "DeKalb": {
-    "errorthreshold": 40,
-    "active" : true,
-    "show" : false
+    "errorthreshold": 40
   },
   "Chatham": {
-    "errorthreshold": 40,
-    "active" : false,
-    "show" : false
+    "errorthreshold": 40
   }
 }

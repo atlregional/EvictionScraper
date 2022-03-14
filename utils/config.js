@@ -32,19 +32,28 @@ module.exports = () => {
   const countyConfigs = {
     'Clayton': {
       ...globalConfig,
-      ...configs.Clayton
+      ...configs.Clayton,
+      name: 'Clayton',
+      closedcasesterm:'Disposed',
+      casenumbersliceindex : 6,
+      dispossessoryterm: 'DISPOSSESSORY'
     },
     'Maconbibb': {
       ...globalConfig,
-      ...configs.Maconbibb
+      ...configs.Maconbibb,
+      name: 'Maconbibb'
     },
     'Henry': {
       ...globalConfig,
-      ...configs.Henry
+      ...configs.Henry,
+      name: 'Henry'
     },
     'Cobb': {
       ...globalConfig,
-      ...configs.Cobb
+      ...configs.Cobb,
+      name: 'Cobb',
+      closedcasesterm:'999999',
+      casenumbersliceindex : 5
     },
     'Gwinnett': {
       ...globalConfig,

@@ -19,8 +19,10 @@ module.exports = config => {
     prevFileList.find(filename => filename.search(county) >= 0) ?
       prevFileList.find(filename => filename.search(county) >= 0)
     : null;
+  const monthsToRescrape = 2;
 
   const dev = config.dev;
+
   const startCase = config.startcase ? config.startcase : 1;
   var year = config.year ? config.year.toString() : '2020';
   const finalYear = config.finalYear ? config.finalYear.toString() : '2020';
@@ -241,7 +243,7 @@ module.exports = config => {
     currentCaseNumber = 1;
     // if the current year more than final year, stop
     year <= finalYear ?
-    calCurrentCaseNumberForYear()
+    createCurrentFileAndSetStartCase()
     :nightmare
     .end()
     .then(console.log(`${county} County Scrape Complete @ ${moment().format('hh:mm [on] M/D/YY')}`))
@@ -621,25 +623,24 @@ module.exports = config => {
   const initiate = () => {
     !fresh && 
     prevFilepath ?
-    calCurrentCaseNumberForYear()
+    createCurrentFileAndSetStartCase()
       : scrape(currentCaseNumber);
   };
 
-  const calCurrentCaseNumberForYear = () =>{
+  const createCurrentFileAndSetStartCase = () =>{
+    var dateCutOff = new Date();
+    dateCutOff.setMonth(dateCutOff.getMonth() - monthsToRescrape);
+    dateCutOff.setDate(1);
+
     fs.createReadStream(prevFilepath)
         .pipe(csv())
         .on('data', row => {
           const rowObj = new Object(row);
           const caseNumber = parseInt(rowObj['caseID'].slice(8));
-          // console.log(rowObj['caseID'])
-          // console.log(caseNumber)
 
-          var dateCutOff = new Date();
-          dateCutOff.setMonth(dateCutOff.getMonth() - 3);
-          dateCutOff.setDate(1);
           var dateCase = new Date(rowObj['fileDate']);
 
-          if (rowObj['caseID'].slice(4, 8) == year){
+          if (rowObj['caseID'].slice(4, 8) == year || !fresh){
           onlynew 
              ?
             fs.appendFile(

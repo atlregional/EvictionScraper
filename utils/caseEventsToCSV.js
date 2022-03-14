@@ -16,5 +16,16 @@ module.exports = (caseRecord, filepath, fields) => {
         }
       )
     )
-    : null;
+    : fs.appendFile(
+      filepath,
+      eventToCsvRow(
+        fields,
+        caseRecord, 
+        {name: '', date: '', description: ''} //No event info
+        , -1
+      ).toString(),
+      (err) => {
+        err ? console.log(err) : null;
+      }
+    );
 };

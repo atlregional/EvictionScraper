@@ -2,114 +2,129 @@ const Nightmare = require('nightmare');
 const cheerio = require('cheerio');
 const moment = require('moment');
 const fs = require('fs');
-const csv = require('csv-parser');
-const eventToCsvRow = require('../utils/eventToCsvRow');
+const initiate = require('../utils/initiate');
+const caseEventsToCSV = require('../utils/caseEventsToCSV');
+
 
 module.exports = config => {
+  // INITIATE WEB DRIVER
+  var nightmare = new Nightmare(
+    {
+      show: config.show,
+      waitTimeout: config.timeout ? config.timeout : 20000
+    }
+  );
 
-  var nightmare = Nightmare({ show: config.show });
-  const county = 'Cobb';
-  const prevFileList = fs.readdirSync('./csvs/prev-scrape/');
-  const prevFileName = prevFileList.length > 0 &&
-    prevFileList.find(filename => filename.search(county) >= 0) ?
-    prevFileList.find(filename => filename.search(county) >= 0)
-    : null;
+  // SET FILE LABEL VARIABLES
+  const scrapeDate = moment().format('MM-DD-YYYY');
+  const scrapeTimeStart = moment().format('h:mm A');
+
+  // GET CONFIG INFO 
+  const append = config.append; 
+  const county = config.name;
+  // const startURL = config.starturl;
   const dev = config.dev;
-  const startCase = config.startcase ? config.startcase : 1;
-  var year = config.year ? config.year : 2020;
-  const finalYear = config.finalYear ? config.finalYear.toString() : '2020';
+  const startCase = config.startcase || 1;
+  var year = config.year || 2022;
   const fresh = config.fresh;
   const onlynew = config.onlynew;
+  const fields = config.fields;
+  const consecutiveErrorThreshold = config.errorthreshold || 35;
+  const closedCasesTerm = config.closedcasesterm;
+  const caseNumberSliceIndex = config.casenumbersliceindex;
+  const monthsToRescrape = config.monthstorescrape || 2;
+  // const dispossessoryTerm = config.dispossessoryterm
+  
+  // GET FILEPATH OF PREVIOUS SCRAPE 
+  const prevFileList = fs.readdirSync('./csvs/prev-scrape/');
+  const prevFileName = 
+    prevFileList.length > 0 &&
+      prevFileList.find(filename => 
+        filename.search(county) >= 0) ?
+      prevFileList.find(filename => 
+        filename.search(county) >= 0)
+    : null;
   const prevFilepath =
     !fresh ?
       prevFileName ?
         `./csvs/prev-scrape/${prevFileName}`
         : config.prevfilepath
       : null;
-  const filetype = 'csv';
-  const filename = `${dev ? 'DEV-' : ''}${year}${county}CountyEvictionCaseEvents-SCRAPE-${moment().format('MM-DD-YYYY')}`;
-  const filepath = `./csvs/${dev ? 'dev/' : 'current-scrape/'}${filename}.${filetype}`;
-  var prevList = [];
-  var errorList = [];
+
+  // SET FILEPATHS FOR SCRAPE AND ERROR LOG CSVS
   const errorListFilepath = `./csvs/errorlogs/${year}${county}CountyScrape-ERROR-LIST.csv`;
+  const filename = `${dev ? 'DEV-' : ''}${year}${county}CountyEvictionCaseEvents-SCRAPE-${scrapeDate}`;
+  const filepath = `./csvs/${dev ? 'dev/' : 'current-scrape/'}${filename}.csv`;
 
-  const fields = config.fields;
-  const headerRow = fields.map((field, i) =>
-    `${field}${i !== fields.length - 1 ? '' : '\n'}`
-  );
-
-  const logError = caseNumber => {
-    fs.appendFile(errorListFilepath,
-      `${year.toString().slice(2)}-E-${caseNumber.toString().padStart(5, '0')}` + '\n'
-      , err => err ? console.log(err) : null);
-  }
-
-  console.log(`Started scraping ${county} County @ ${moment().format('hh:mm [on] M/D/YY')}`)
-
-  const caseNotFoundThreshold = 30;
+  // INITIATE ARRAYS, CONTROLS, AND COUNTERS 
+  var updateList = [];
   let currentCaseNumber = startCase;
-  let consecutiveCasesNotFound = 0;
-  let errorRescrapeCount = 0;
-  let getCaseFailCount = 0;
+  let consecutiveErrors = 0;
+  let lastScrapeEnd = 0;
 
-  
 
-  const extract = caseNumber => {
+  const logError = (caseNumber, err) => {
+    const caseID = `${year.toString().slice(2)}-E-${caseNumber.toString().padStart(5, '0')}`
+    
+    fs.appendFile(errorListFilepath,
+      `${caseID}, ${err} \n`
+      , err => err ? console.log(err) : null);
+  };
 
-    // console.log(`https://courtconnect.cobbcounty.org:4443/ccmag/ck_public_qry_doct.cp_dktrpt_docket_report?case_id=${year.toString().slice(2)}-E-${caseNumber.toString().padStart(5, '0')}&begin_date=&end_date=`)
-
-    // setTimeout(function(){ 
-
+  const navigation = caseNumber => {
+    const caseID = `${year.toString().slice(2)}-E-${caseNumber.toString().padStart(5, '0')}`
     nightmare
-      .goto(`https://courtconnect.cobbcounty.org:4443/ccmag/ck_public_qry_doct.cp_dktrpt_docket_report?case_id=${year.toString().slice(2)}-E-${caseNumber.toString().padStart(5, '0')}&begin_date=&end_date=`)
+      .goto(`https://courtconnect.cobbcounty.org:4443/ccmag/ck_public_qry_doct.cp_dktrpt_docket_report?case_id=${caseID}&begin_date=&end_date=`)
       .wait('body')
       .evaluate(() =>
         document.querySelector('body').innerHTML
       )
       .then(response => {
-        // (response.search('No case was found') === -1 && response.search(/error/i) === -1) ?
-        if (response.search('500 Internal Server Error') !== -1 ){
-          // errorList.push(caseNumber);
-
-          //logError(response);
+        if (response.includes('500 Internal Server Error')){
+          consecutiveErrors++;
+          console.log("consecutiveErrors", consecutiveErrors);
+          console.log("currentCaseNumber",currentCaseNumber);
+          logError(currentCaseNumber, 'BAD RESPONSE: 500 Internal Server Error');
+  
           nightmare
-          .goto(`https://courtconnect.cobbcounty.org:4443/ccmag/ck_public_qry_doct.cp_dktrpt_srch_setup?backto=&case_id=${year.toString().slice(2)}-E-${caseNumber.toString().padStart(5, '0')}&begin_date=&end_date=`)
+          .goto(`https://courtconnect.cobbcounty.org:4443/ccmag/ck_public_qry_doct.cp_dktrpt_srch_setup?backto=&case_id=${caseID}&begin_date=&end_date=`)
           .wait('body')
           .then(() => {
             scrape(currentCaseNumber);
           })
         }
-        // else if (response.search('session limit') !== -1 && response.search('Case ID') === -1){
-        else if (response.search('session limit') !== -1 ){
-          //console.log(`https://courtconnect.cobbcounty.org:4443/ccmag/ck_public_qry_doct.cp_dktrpt_docket_report?case_id=${year.toString().slice(2)}-E-${caseNumber.toString().padStart(5, '0')}&begin_date=&end_date=`)
-          // console.log('session limit',currentCaseNumber)
-          // errorList.push(caseNumber);
-          //logError(response);
-        
-          // currentCaseNumber++;
+        else if (response.includes('session limit')){
+          consecutiveErrors++;
+          console.log("consecutiveErrors", consecutiveErrors);
+          console.log("currentCaseNumber",currentCaseNumber);
+          logError(currentCaseNumber, 'BAD RESPONSE: session limit');
+  
           nightmare
-          .goto(`https://courtconnect.cobbcounty.org:4443/ccmag/ck_public_qry_doct.cp_dktrpt_srch_setup?backto=&case_id=${year.toString().slice(2)}-E-${caseNumber.toString().padStart(5, '0')}&begin_date=&end_date=`)
+          .goto(`https://courtconnect.cobbcounty.org:4443/ccmag/ck_public_qry_doct.cp_dktrpt_srch_setup?backto=&case_id=${caseID}&begin_date=&end_date=`)
           .wait('body')
           .then(() => {
             scrape(currentCaseNumber);
           })
-          
-
-          // consecutiveCasesNotFound++;
-
         }else{
-  
-          response.search('No case was found') === -1 ?
-            getDataAndWriteToCSV(response)
-            : consecutiveCasesNotFound++;
+          !response.includes('No case was found')
+            ? ( extract(response)
+                  .then(caseRecord =>
+                    caseEventsToCSV(caseRecord, filepath, fields)
+                  ), consecutiveErrors=0)
+            : ( consecutiveErrors++,
+                console.log("consecutiveErrors", consecutiveErrors),
+                console.log("currentCaseNumber",currentCaseNumber),
+                logError(currentCaseNumber, 'BAD RESPONSE: session limit'))
+          
           currentCaseNumber++
           scrape(currentCaseNumber);
         }
       })
       .catch(err => {
-        errorList.push(caseNumber);
-        logError(caseNumber);
-        logError(err);
+        consecutiveErrors++;
+        console.log("consecutiveErrors", consecutiveErrors);
+        console.log("currentCaseNumber",currentCaseNumber);
+        logError(currentCaseNumber, err);
         currentCaseNumber++;
         scrape(currentCaseNumber);
       })
@@ -117,131 +132,9 @@ module.exports = config => {
       // }, 1000);
   };
 
-  const reinitiateAndFinish = () => { 
-    const headerRow = fields.map((field, i) =>
-      `${field}${i !== fields.length - 1 ? '' : '\n'}`
-    );
 
-    fs.writeFile(filepath, headerRow.toString(), err => {
-      err ? console.log(err) : null
-    });
-
-    setTimeout(function(){
-
-    new fs.createReadStream(prevFilepath)
-      .pipe(csv())
-      .on('data', row => {
-        const rowObj = new Object(row);
-        fs.appendFile(
-          filepath,
-          fields.map((field, i) =>
-            `"${rowObj[field] ? rowObj[field] : ''}"${i === fields.length - 1 ? '\n' : ''}`
-          ).toString(),
-          err => err ?
-            console.log(err)
-            : null
-        )
-      })
-    },10000)
-  };
-
-  const nextScrape = () => {
-    currentCaseNumber++;
-    scrape(currentCaseNumber);
-  };
-
-  const extractError = caseNumber => {
-    nightmare
-      .goto(`https://courtconnect.cobbcounty.org:4443/ccmag/ck_public_qry_doct.cp_dktrpt_docket_report?case_id=${year.toString().slice(2)}-E-${caseNumber.toString().padStart(5, '0')}&begin_date=&end_date=`)
-      .wait('body')
-      .evaluate(() =>
-        document.querySelector('body').innerHTML
-      )
-      .then(response => {
-        // (response.search('No case was found') === -1 && response.search(/error/i) === -1) ?
-
-        if (response.search('500 Internal Server Error') !== -1 ){
-          // errorList.push(caseNumber);
-          // logError(caseNumber);
-
-          // errorRescrapeCount++
-
-          nightmare
-          .goto(`https://courtconnect.cobbcounty.org:4443/ccmag/ck_public_qry_doct.cp_dktrpt_srch_setup?backto=&case_id=${year.toString().slice(2)}-E-${caseNumber.toString().padStart(5, '0')}&begin_date=&end_date=`)
-          .wait('body')
-          .then(() => {
-            currentCaseNumber = errorList[errorRescrapeCount];
-            scrape(currentCaseNumber);
-          })
-
-          
-
-          // consecutiveCasesNotFound++;
-        }
-        else if (response.search('session limit') !== -1){
-          // console.log('session limit',currentCaseNumber)
-
-          nightmare
-          .goto(`https://courtconnect.cobbcounty.org:4443/ccmag/ck_public_qry_doct.cp_dktrpt_srch_setup?backto=&case_id=${year.toString().slice(2)}-E-${caseNumber.toString().padStart(5, '0')}&begin_date=&end_date=`)
-          .wait('body')
-          .then(() => {
-            currentCaseNumber = errorList[errorRescrapeCount];
-            scrape(currentCaseNumber);
-          })
-
-        }else{
-
-        response.search('No case was found') === -1 ?
-          getDataAndWriteToCSV(response)
-          : consecutiveCasesNotFound++;
-        errorRescrapeCount++
-        currentCaseNumber = errorList[errorRescrapeCount];
-        scrape(currentCaseNumber);
-
-        }
-      })
-      .catch(err => {
-        errorList.push(caseNumber);
-        logError(caseNumber);
-        logError(err);
-        errorRescrapeCount++;
-        currentCaseNumber = errorList[errorRescrapeCount];
-        scrape(currentCaseNumber);
-
-      })
-  };
-
-  const scrape = caseNumber => {
-    consecutiveCasesNotFound < caseNotFoundThreshold ?
-      prevList.includes(caseNumber) === false?
-        extract(caseNumber)
-        :nextScrape()
-      : errorList.length > 0 && 
-        errorRescrapeCount < errorList.length ?
-        extractError(errorList[errorRescrapeCount])
-        : scrapeUntilFinalYear()
-  };
-
-  const scrapeUntilFinalYear = () => {
-    //reset error checker
-    consecutiveCasesNotFound = 0;
-    errorList = [];
-    errorRescrapeCount = 0;
-    // go to next year
-    year++;
-    //reset case number 
-    currentCaseNumber = 1;
-    prevList = [];
-    // if the current year more than final year, stop
-    year <= finalYear ?
-    calCurrentCaseNumberForYear()
-    :nightmare
-    .end()
-    .then(console.log(`${county} County Scrape Complete @ ${moment().format('hh:mm [on] M/D/YY')}`))
-  };
-
-  const getDataAndWriteToCSV = html => {
-    consecutiveCasesNotFound = 0;
+  const extract = async html => {
+    // console.log(html);
     const caseRecord = {
       fileDate: null,
       caseID: null,
@@ -279,8 +172,6 @@ module.exports = config => {
         )
         .filter(item =>
           item !== '-NON JURY');
-
-      // console.log(tableInfoArray);
 
       const fileDate = tableInfoArray[4].replace('Filing Date:', '').trim().split(' ').filter(item => item.length > 2);
       const plaintiffLongAddressArray = tableInfoArray
@@ -341,15 +232,13 @@ module.exports = config => {
 
       const addEvents = (i) => 
         tableInfoArray.map((item, i) =>
-          item === 'Entry:' ?
-            events.push({
+          item === 'Entry:'
+            ? events.push({
               date: moment(tableInfoArray[i - 7], 'DD-MMM-YYYYHH:mm A').format('M/D/YYYY'),
               name: tableInfoArray[i - 6]
             })
             : null
         );
-
-     
 
       switch (i) {
         case 0:
@@ -409,120 +298,101 @@ module.exports = config => {
             addEvents(i);
             caseRecord.events = events;
           }
-            
           break;
         case 4:
           addEvents(i);
           caseRecord.events = events;
           break;
       }
+
+
     });
 
+    return caseRecord;
 
-    const writeEventsToCSV = async () => {
-      // console.log(caseRecord);
-      caseRecord.caseID?getCaseFailCount = 0
-      :getCaseFailCount++
-
-      // console.log("navigationFailCount:",getCaseFailCount)
-      getCaseFailCount< 20?
-        null
-        :nightmare
-          .end()
-          .then(
-            
-            reinitiateAndFinish(),
-            console.log(`${county} County Scrape Complete @ ${moment().format('hh:mm [on] M/D/YY')}`)
-          )
-
-      const events = await caseRecord.events;
-      events ?
-        events.forEach((event, i) =>
-          fs.appendFile(filepath,
-            eventToCsvRow(fields, caseRecord, event, i).toString(),
-            err => {
-              err ? console.log(err) : null
-            }
-          )
-        ) : console.log(`No events for case ${caseRecord.caseID}`);
-    };
-
-    if (caseRecord.caseID){
-      writeEventsToCSV();
-    }else{
-      scrape(currentCaseNumber);
-    }
-  };
-
-  const calCurrentCaseNumberForYear = () =>{
-    new fs.createReadStream(prevFilepath)
-        .pipe(csv())
-        .on('data', row => {
-          const rowObj = new Object(row);
-          const caseNumber = parseInt(rowObj['caseID'].slice(5));
-
-          var dateCutOff = new Date();
-          dateCutOff.setMonth(dateCutOff.getMonth() - 3);
-          dateCutOff.setDate(1);
-          var dateCase = new Date(rowObj['fileDate']);
-
-          if (rowObj['caseID'].slice(0, 2) == year.toString().slice(2)){
-
-          onlynew 
-             ?
-          fs.appendFile(
-            filepath,
-            fields.map((field, i) =>
-              `"${rowObj[field] ? rowObj[field] : ''}"${i === fields.length - 1 ? '\n' : ''}`
-            ).toString(),
-            err => err ?
-              console.log(err)
-              : null
-          ): dateCase < dateCutOff ? 
-          fs.appendFile(
-            filepath,
-            fields.map((field, i) =>
-              `"${rowObj[field] ? rowObj[field] : ''}"${i === fields.length - 1 ? '\n' : ''}`
-            ).toString(),
-            err => err ?
-              console.log(err)
-              : null
-          ): null;
-
-          onlynew ?
-          !prevList.includes(caseNumber) ?
-            prevList.push(caseNumber)
-            : null
-          : (dateCase < dateCutOff)?
-              // PUSH OPEN (NON-CLOSED) CASES TO ARRAY TO LIMIT SCRAPER TO ONLY THOSE CASES
-              !prevList.includes(caseNumber) ?
-              prevList.push(caseNumber)
-              : null 
-            : null;
-          }
-        })
-        .on('end', () => {
-          prevList.length > 0?
-          currentCaseNumber = prevList.sort(function(a, b) { return b - a; })[10]
-          :currentCaseNumber = 1
-       
-          // year = finalYear;
-          scrape(currentCaseNumber);
-        })
-  }
-
-  const initiate = () => {
-    fs.writeFile(filepath, headerRow.toString(), err => {
-      err ? console.log(err) : null
-    });
     
-    setTimeout(function(){
-      !fresh && 
-      prevFilepath ?
-      calCurrentCaseNumberForYear()
-        : scrape(currentCaseNumber);
-    },10000)
+
+
+    // const writeEventsToCSV = async () => {
+    //   // console.log(caseRecord);
+    //   // caseRecord.caseID
+    //   //   ? getCaseFailCount = 0
+    //   //   : getCaseFailCount++
+
+    //   // console.log("navigationFailCount:",getCaseFailCount)
+    //   // getCaseFailCount< 20?
+    //   //   null
+    //   //   :nightmare
+    //   //     .end()
+    //   //     .then(
+            
+    //   //       reinitiateAndFinish(),
+    //   //       console.log(`${county} County Scrape Complete @ ${moment().format('hh:mm [on] M/D/YY')}`)
+    //   //     )
+
+    //   // const events = await caseRecord.events;
+    //   // caseEventsToCSV(caseRecord, filepath, fields);
+
+    //   // if (events) { events.forEach((event, i) =>
+    //   //       fs.appendFile(filepath,
+    //   //         eventToCsvRow(fields, caseRecord, event, i).toString(),
+    //   //         err => {
+    //   //           err ? console.log(err) : null
+    //   //         }
+    //   //       )
+    //   //     ) 
+    //   // } else {
+    //   //   fs.appendFile(filepath,
+    //   //     eventToCsvRow(fields, caseRecord, {name: '', date: '', description: ''}, -1).toString(),
+    //   //     err => {
+    //   //       err ? console.log(err) : null
+    //   //     }
+    //   //   )
+    //   // }
+    // };
+
+    // if (caseRecord.caseID){
+    //   caseEventsToCSV(caseRecord, filepath, fields);
+    // }else{
+    //   scrape(currentCaseNumber);
+    // }
   };
 
-  initiate();
+  // FUNCTION TO CONTROL SCRAPER
+  const scrape = caseNumber => {
+    consecutiveErrors < consecutiveErrorThreshold 
+      ? fresh ||
+        onlynew ||
+        caseNumber > lastScrapeEnd ||
+        (caseNumber <= lastScrapeEnd && updateList.includes(caseNumber))
+          ? navigation(caseNumber)
+          : (currentCaseNumber++, scrape(currentCaseNumber))
+      : nightmare
+        .end()
+        .then(console.log(`${county} County Scrape Complete @ ${moment().format('hh:mm [on] M/D/YY')}`))
+  };
+
+  initiate({
+    startCase: startCase,
+    prevFilepath: prevFilepath,
+    monthsToRescrape :monthsToRescrape,
+    fresh: fresh,
+    onlynew: onlynew,
+    year: year,
+    county: county,
+    closedCasesTerm: closedCasesTerm,
+    fields: fields,
+    filepath: filepath,
+    caseNumberSliceIndex: caseNumberSliceIndex,
+    append: append
+  }).then(obj => {
+      console.log(`Scrape of ${county} County started @ ${scrapeTimeStart} on ${scrapeDate}`);
+      console.log('Initiation object:',obj);
+      updateList = obj.updateList;
+      lastScrapeEnd = obj.lastScrapeEnd;
+      currentCaseNumber = obj.currentCaseNumber;
+      scrape(currentCaseNumber);
+
+  }).catch(err => console.log('Error initiating:', err));
 }
+

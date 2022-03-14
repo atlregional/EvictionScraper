@@ -8,8 +8,8 @@ const fs = require('fs');
 const initiate = require('../utils/initiate');
 
 // IMPORT UTILITY MODULES
-const extractCaseRecord = require('../utils/extractCaseRecord');
 const caseEventsToCSV = require('../utils/caseEventsToCSV');
+const cheerio = require('cheerio');
 
 Nightmare.action('clearCache',
   function(name, options, parent, win, renderer, done) {
@@ -23,7 +23,7 @@ Nightmare.action('clearCache',
   function(done) {
   
     this.child.call('clearCache', done);
-  });
+});
 
 // EXPORT ODYSSEY SCRAPER MODULE
 module.exports = config => {
@@ -41,7 +41,7 @@ module.exports = config => {
   const scrapeDate = moment().format('MM-DD-YYYY');
   const scrapeTimeStart = moment().format('h:mm A');
 
-  // GET CONFIG INFO 
+  // GET CONFIG INFO
   const append = config.append; 
   const county = config.name;
   const startURL = config.starturl;
@@ -55,7 +55,6 @@ module.exports = config => {
   const closedCasesTerm = config.closedcasesterm;
   const caseNumberSliceIndex = config.casenumbersliceindex;
   const monthsToRescrape = config.monthstorescrape || 2;
-  const dispossessoryTerm = config.dispossessoryterm
   
   // GET FILEPATH OF PREVIOUS SCRAPE 
   const prevFileList = fs.readdirSync('./csvs/prev-scrape/');
@@ -86,26 +85,18 @@ module.exports = config => {
 
   // FUNCTION TO LOG CASE NUMBER OF ERRORS TO CSV
   const logError = (caseNumber, err) => {
-    var caseID = "";
+    var caseID = `${year.toString().slice(2)}ED${caseNumber.toString().padStart(5, '0')}`;
 
-    if (county == "Fulton"){
-       caseID = `${year.toString().slice(2)}ED${caseNumber.toString().padStart(5, '0')}`;
-    }else if(county == "DeKalb"){
-       caseID = `${year.toString().slice(2)}D${caseNumber.toString().padStart(5, '0')}`;
-    }else if(county == "Gwinnett"){
-       caseID =  `${year.toString().slice(2)}-M-${caseNumber.toString().padStart(5, '0')}`;
-    }else if(county == "Chatham"){
-      caseID =  `MGCV${year.toString().slice(2)}-${caseNumber.toString().padStart(5, '0')}`;
-   }
-
-   fs.appendFile(errorListFilepath,
+    fs.appendFile(errorListFilepath,
     `${caseID}, ${err} \n`
     , err => err ? console.log(err) : null);
   };
 
-  // FUNCTION TO MOVE TO THE CASE SEARCH
+
   const nextSearch = () => {
+
     currentCaseNumber++;
+
     consecutiveErrors < consecutiveErrorThreshold
       ? fresh || 
         onlynew || 
@@ -132,85 +123,153 @@ module.exports = config => {
           .then(console.log(`${county} County Scrape Complete @ ${moment().format('hh:mm [on] M/D/YY')}`))
   };
 
+  const getCaseRecord = (searchResultRow, caseID, eventDetails) => {
+    // console.log(searchResultRow)
+    const $ = cheerio.load(searchResultRow);
+
+    const fileDate = $(`.k-master-row`).find('span').text();
+    const caseStatus = $(`.party-case-status`).text();
+    const names = $(`.k-master-row`).find('div').text().split("vs.");
+    const eventList = [];
+
+    if (eventDetails) {
+      const $ = cheerio.load(eventDetails);
+      $(`.roa-event-info`).each((index, tr ) => {
+        var eventName;
+
+        if($('.roa-event-date-col',tr).text()){
+        
+          const eventDate = $('.roa-event-date-col',tr).text().split("\n")
+          .map((item) => item.trim().replace(/["]/g, ''))
+          .filter(item => item !== '').toString();
+
+          if($('[data-rem-class="roa-event-content"]',tr).text()){
+            eventName = $('[data-rem-class="roa-event-content"]',tr).text().split("\n")
+            .map((item) => item.trim().replace(/["]/g, ''))
+            .filter(item => item !== '').toString();
+          }else{
+            eventName = $('.roa-event-content',tr).text().split("\n")
+            .map((item) => item.trim().replace(/["]/g, ''))
+            .filter(item => item !== '').toString();
+          }
+
+          eventList.push({
+            date: eventDate,
+            name: eventName,
+          })
+        }else{
+          return null;
+        }
+      })
+    }
+
+    const caseRecordObjFulton = {
+            fileDate: fileDate,
+            caseID: caseID,
+            plaintiff: names[0].replace(/"/g, "\'"),
+            plaintiffAddress: '',
+            plaintiffCity: '',
+            plaintiffPhone: '',
+            plaintiffAttorney: '',
+            defendantName1: names[1].replace(/"/g, "\'"),
+            defendantAddress1: '',
+            defendantCity1: '',
+            defendantPhone1: '',
+            defendantAttorney1: '',
+            defendantName2: '',
+            defendantAddress2: '',
+            defendantCity2: '',
+            defendantPhone2: '',
+            defendantAttorney2: '',
+            caseStatus: caseStatus,
+            address: '',
+            judgmentType: '',
+            judgmentFor:'',
+            judgmentComp: '',
+            events: eventList,
+          };
+
+    return caseRecordObjFulton;
+  };
+
   // FUNCTION TO SEARCH BY CASE NUMBER AND RUN EXTRACTOR
-  const navigation = caseNumber => {
-    var caseID = "";
-   
-    if(county == "DeKalb"){
-       caseID = `${year.toString().slice(2)}D${caseNumber.toString().padStart(5, '0')}`;
-    }else if(county == "Gwinnett"){
-       caseID =  `${year.toString().slice(2)}-M-${caseNumber.toString().padStart(5, '0')}`;
-    }else if(county == "Chatham"){
-      caseID =  `MGCV${year.toString().slice(2)}-${caseNumber.toString().padStart(5, '0')}`;
-   }
+  const extract = caseNumber => {
+    var caseID = `${year.toString().slice(2)}ED${caseNumber.toString().padStart(5, '0')}`;
     nightmare
       .wait("#btnSSSubmit")
       .evaluate(() =>
         document.querySelector(
           "input[name='caseCriteria.SearchCriteria']"
-        ).value = null)
-      .insert(
-        "input[name='caseCriteria.SearchCriteria']", 
-        caseID
+        ).value = null
       )
+      .insert("input[name='caseCriteria.SearchCriteria']", caseID)
       .click("#btnSSSubmit")
       .wait('tr.k-master-row')
       .wait(`a[title='${caseID}']`)
-      .evaluate(() =>
-        document.querySelector('#CasesGrid').innerHTML
-      )
+      .evaluate(() => document.querySelector('#CasesGrid').innerHTML)
       .then(searchResultRow => {
-        const isDispossessory = dispossessoryTerm && searchResultRow 
-          ? searchResultRow.includes(dispossessoryTerm)
-          : true;        
-        isDispossessory
-          ? nightmare 
-              .wait(`a[title='${caseID}']`)
-              .click(`a[title='${caseID}']`)
-              .wait(`#${config.divIDs.caseInfo}`)
-              .evaluate(() => document.querySelector('body').innerHTML)
-              .then(caseDetailsHTML => {
-                const caseRecord = extractCaseRecord(caseDetailsHTML, config);
-                caseEventsToCSV(caseRecord, filepath, fields);
-                nextSearch()
-              })
-              .catch(err => {
+        nightmare
+          .windowManager() 
+          .click(`a[title='${caseID}']`)
+          .waitWindowLoad()
+          .currentWindow()
+          .then(window => {
+            nightmare
+            .goto(window.url)
+            .wait(`div[ng-if='(data.combinedEvents.Count > 0)']`)
+            .wait('div.roa-event-info')
+            .evaluate(() => document.querySelector(`div[ng-if='(data.combinedEvents.Count > 0)']`).innerHTML)
+            .then(eventDetails => {
+              const caseRecord =  getCaseRecord(searchResultRow,caseID,eventDetails)
+              caseEventsToCSV(caseRecord, filepath, fields)
+              consecutiveErrors = 0;
+              nextSearch();
+            }).catch(err => {
+              console.Con
+              if (!`${err}`.includes('(data.combinedEvents.Count > 0)') &&
+                  !`${err}`.includes('roa-event-info')) {
                 consecutiveErrors++;
                 console.log("consecutiveErrors", consecutiveErrors);
                 console.log("currentCaseNumber",currentCaseNumber);
-                logError(currentCaseNumber, err);
+                logError(currentCaseNumber, err);;
                 nextSearch();
-              })
-          : nextSearch();
+              } else {
+                const caseRecord =  getCaseRecord(searchResultRow,caseID)
+                caseEventsToCSV(caseRecord, filepath, fields)
+                consecutiveErrors = 0;
+                nextSearch();
+              }
+            })
+          })
       })      
       .catch(err => {
         consecutiveErrors++;
         console.log("consecutiveErrors", consecutiveErrors);
         console.log("currentCaseNumber",currentCaseNumber);
         logError(currentCaseNumber, err);
-        nextSearch();        
+        nextSearch();
       })
-    
   };
 
-  // FUNCTION TO CONTROL SCRAPER
+  // FUNCTION TO HANDLE SCRAPE SEQUENCE AND ENDING
   const scrape = caseNumber => {
     consecutiveErrors < consecutiveErrorThreshold 
       ? fresh ||
         onlynew ||
         caseNumber > lastScrapeEnd ||
         (caseNumber <= lastScrapeEnd && updateList.includes(caseNumber))
-          ? navigation(caseNumber)
+          ? extract(caseNumber)
           : nextSearch()
       : nightmare
         .end()
         .then(console.log(`${county} County Scrape Complete @ ${moment().format('hh:mm [on] M/D/YY')}`))
   };
 
+  var loginFailCount = 0;
+
   // FUNCTION TO LOGIN WITH TYLER ACCOUNT
-  const odysseyLogin = ({nightmare, currentCaseNumber, USERNAME, PASSWORD}) => 
+  const odysseyLogin = ({currentCaseNumber, USERNAME, PASSWORD}) => 
     new Promise((resolve, reject) => {
-      var loginFailCount = 0;
       nightmare
         .goto(startURL)
         .wait('body')
@@ -222,27 +281,7 @@ module.exports = config => {
         .wait(`a[href="${config.searchpath}"]`)
         .click(`a[href="${config.searchpath}"]`)
         .then(()=> resolve(currentCaseNumber))
-        .catch(err => {
-          loginFailCount ++;
-          console.log("loginFailCount",loginFailCount);
-          console.log("currentCaseNumber",currentCaseNumber);
-          logError(currentCaseNumber, `LOGIN ${err}`);
-
-          loginFailCount <= 5
-            ? nightmare
-                .end()
-                .then(() => {
-                  nightmare = new Nightmare(
-                    {
-                      show: config.show,
-                      waitTimeout: config.timeout ? config.timeout : 20000
-                    }
-                  )
-                }).then(() => {
-                  login()
-                })
-            : reject(err)
-        })
+        .catch(err => reject(err))
     });
 
   // INITIATE FILES, LOGIN, and BEGIN SCRAPING
@@ -275,18 +314,19 @@ module.exports = config => {
       })
         .then(startCaseNumber => scrape(startCaseNumber))
         .catch(err =>{ 
+
           console.log("loginFailCount",loginFailCount);
           console.log("currentCaseNumber",currentCaseNumber);
-          logError(currentCaseNumber,`LOGIN ${err}`);
+          logError(currentCaseNumber,`FATAL LOGIN ${err}`);
   
           nightmare
             .end()
             .then(() =>
               console.log(`${county} County Scrape Failed @ ${moment().format('hh:mm [on] M/D/YY')}`)
             )
+          
         })
   }).catch(err => console.log('Error initiating:', err));
-
   
 }
 

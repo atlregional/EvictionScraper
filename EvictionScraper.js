@@ -13,6 +13,7 @@ const CobbScraper = require('./modules/CobbScraper');
 const MaconbibbScraper = require('./modules/MaconbibbScraper');
 const HenryScraper = require('./modules/HenryScraper');
 const OdysseyScraper = require('./modules/OdysseyScraper');
+const FultonScraper = require('./modules/FultonScraper')
 
 // IMPORT SCRAPER CONFIGURATION OBJECT FROM CONFIG MODULE
 const scraperConfigs = require('./utils/config')();
@@ -53,7 +54,7 @@ if (process.argv[2] == 'Gwinnett'){
 
   setTimeout(function(){
     scraperConfigs['Fulton'].active ?
-    OdysseyScraper(scraperConfigs['Fulton'])
+    FultonScraper(scraperConfigs['Fulton'])
     : null;
   },5000)
 
@@ -95,7 +96,7 @@ if (process.argv[3] == 'DeKalb'){
 
 }
 else if (process.argv[3] == 'Cobb'){
-
+  console.log(scraperConfigs['Cobb'])
   scraperConfigs['Cobb'].active ?
   CobbScraper(scraperConfigs['Cobb'])
   : null;
